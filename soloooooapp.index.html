@@ -1,0 +1,533 @@
+<!doctype html>
+
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Solo-Leveling Gym Game (Sensor + Camera Tracking)</title>
+  <style>
+    :root{--bg:#0f172a;--card:#0b1220;--accent:#38bdf8;--muted:#94a3b8;--green:#10b981}
+    html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    body{background:linear-gradient(180deg,#071023 0%, #071a2d 60%);color:#e6eef8;display:flex;align-items:center;justify-content:center;padding:20px}
+    .app{width:100%;max-width:980px;background:linear-gradient(180deg,rgba(255,255,255,0.02),rgba(255,255,255,0.01));border-radius:16px;padding:18px;box-shadow:0 8px 30px rgba(2,6,23,0.6);display:grid;grid-template-columns:350px 1fr;gap:18px}
+    .card{background:var(--card);padding:12px;border-radius:12px}
+    h1{margin:0 0 8px 0;font-size:18px}
+    .avatar{height:140px;border-radius:10px;background:linear-gradient(135deg,#0b1220,#072030);display:flex;align-items:center;justify-content:center;flex-direction:column}
+    .avatar .figure{width:80px;height:100px;background:linear-gradient(180deg,#203a5a,#06314a);border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700}
+    .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+    .stat{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px}
+    .stat small{display:block;color:var(--muted);font-size:12px}
+    .bars{margin:10px 0}
+    .bar{height:12px;background:rgba(255,255,255,0.05);border-radius:8px;overflow:hidden}
+    .bar > i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),#7c3aed);width:0%}
+    .controls{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+    button{background:linear-gradient(90deg,#0ea5e9,#7c3aed);border:none;padding:12px;border-radius:10px;color:white;font-weight:700;cursor:pointer}
+    button.secondary{background:transparent;border:1px solid rgba(255,255,255,0.06);font-weight:600}
+    .log{height:140px;overflow:auto;background:linear-gradient(180deg,rgba(255,255,255,0.01),transparent);padding:8px;border-radius:8px;font-size:13px}
+    .main{display:flex;flex-direction:column;gap:12px}
+    .panel{display:flex;gap:12px}
+    .panel .box{flex:1}
+    .dungeon{background:linear-gradient(180deg,#051225,#08142a);padding:12px;border-radius:12px}
+    .monster{display:flex;align-items:center;gap:12px}
+    .monster .mfigure{width:80px;height:80px;background:linear-gradient(180deg,#3b083b,#1a0830);border-radius:8px;display:flex;align-items:center;justify-content:center}
+    .footer{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-top:6px}
+    .small{font-size:13px;color:var(--muted)}
+    .tracker{display:flex;gap:8px;align-items:center;margin-top:8px}
+    video{max-width:100%;border-radius:8px}
+    canvas.overlay{position:absolute;left:0;top:0}
+    .tracker-wrap{position:relative}
+    @media (max-width:900px){.app{grid-template-columns:1fr;max-width:520px}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="card">
+      <h1>Solo-Leveling Gym: Train to Ascend</h1>
+      <div class="avatar">
+        <div class="figure" id="avatar-figure">Lv1</div>
+        <div class="small" id="avatar-desc">Weak but Determined</div>
+      </div><div class="stats">
+    <div class="stat"><small>Level</small><div id="level">1</div></div>
+    <div class="stat"><small>EXP</small><div id="exp">0 / 100</div></div>
+    <div class="stat"><small>Strength</small><div id="strength">1</div></div>
+    <div class="stat"><small>Endurance</small><div id="endurance">1</div></div>
+    <div class="stat"><small>Agility</small><div id="agility">1</div></div>
+    <div class="stat"><small>Stamina</small><div id="stamina-val">10 / 10</div></div>
+  </div>
+
+  <div class="bars">
+    <div class="small">EXP</div>
+    <div class="bar"><i id="bar-exp" style="width:0%"></i></div>
+    <div style="height:6px"></div>
+    <div class="small">Stamina</div>
+    <div class="bar"><i id="bar-stam" style="width:100%"></i></div>
+  </div>
+
+  <div class="controls">
+    <button id="btn-push">Do Push-up (Strength)</button>
+    <button id="btn-sit">Do Sit-up (Endurance)</button>
+    <button id="btn-squat">Do Squat (Agility)</button>
+    <div style="display:flex;gap:8px">
+      <button class="secondary" id="btn-do10">Do 10 reps (Requires 10 stamina)</button>
+      <button class="secondary" id="btn-rest">Rest (+3 Stamina)</button>
+    </div>
+
+    <div style="height:10px"></div>
+    <div class="small">Real-time Tracking</div>
+    <div class="card small">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <div style="display:flex;gap:6px">
+          <select id="exercise-select"><option value="push">Push-up</option><option value="sit">Sit-up</option><option value="squat">Squat</option></select>
+          <button class="secondary" id="start-motion">Start Motion Tracking</button>
+          <button class="secondary" id="stop-motion" disabled>Stop</button>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="secondary" id="start-camera">Start Camera Tracking</button>
+          <button class="secondary" id="stop-camera" disabled>Stop</button>
+          <button class="secondary" id="toggle-overlay">Toggle Overlay</button>
+        </div>
+        <div class="tracker" id="motion-status">Motion: <span id="motion-count">0</span> reps</div>
+        <div class="tracker" id="camera-status">Camera: <span id="camera-count">0</span> reps</div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:10px" class="small">Save: <span id="save-status">Auto</span></div>
+</div>
+
+<div class="main">
+  <div class="panel">
+    <div class="box card">
+      <h3>Training Log</h3>
+      <div class="log" id="log"></div>
+    </div>
+    <div class="box card">
+      <h3>Progress & Skills</h3>
+      <div class="small">Unlocked Skills</div>
+      <ul id="skills"></ul>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="box card dungeon">
+      <h3>Dungeon (Unlocked at Lv 5)</h3>
+      <div id="dungeon-area">
+        <div class="monster">
+          <div class="mfigure" id="monster-figure">?</div>
+          <div>
+            <div id="monster-name">No Dungeon</div>
+            <div class="small" id="monster-hp"></div>
+          </div>
+        </div>
+
+        <div style="height:8px"></div>
+        <div style="display:flex;gap:8px">
+          <button id="btn-enter" class="secondary">Enter Dungeon</button>
+          <button id="btn-attack" class="secondary">Fight (Auto)</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="box card">
+      <h3>Camera Tracker</h3>
+      <div class="small">Point the camera so your whole body is visible. Use good lighting for best results.</div>
+      <div class="tracker-wrap" id="tracker-wrap" style="margin-top:8px">
+        <video id="video" autoplay playsinline width="480" height="360" style="background:#000;border-radius:8px;display:none"></video>
+        <canvas id="overlay" class="overlay" width="480" height="360" style="display:none"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer card">
+    <div class="small">Tips: For accelerometer tracking put phone in chest pocket for push/sit or front pocket for squats. On iOS allow Motion & Orientation in Settings when prompted. Camera tracking uses PoseNet — ensure full body in frame.</div>
+    <div>
+      <button class="secondary" id="btn-reset">Reset Progress</button>
+    </div>
+  </div>
+</div>
+
+  </div>  <!-- Load TensorFlow.js & PoseNet -->  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.20.0/dist/tf.min.js"></script>  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet@2.2.1/dist/posenet.min.js"></script><script>
+// -------------------- Game state and defaults --------------------
+const DEFAULT = {
+  level:1, exp:0, expToNext:100,
+  strength:1, endurance:1, agility:1,
+  stamina:10, maxStamina:10,
+  skills:[], achievements:[], totalReps:{push:0,sit:0,squat:0}
+}
+let state = loadState() || JSON.parse(JSON.stringify(DEFAULT));
+
+// -------------------- Utilities --------------------
+function saveState(){
+  localStorage.setItem('sl_gym', JSON.stringify(state));
+  document.getElementById('save-status').innerText = 'Saved ' + new Date().toLocaleTimeString();
+}
+function resetState(){
+  if(confirm('Reset all progress?')){ localStorage.removeItem('sl_gym'); state = JSON.parse(JSON.stringify(DEFAULT)); refreshAll(); log('Progress reset.'); }
+}
+
+// -------------------- Logging --------------------
+function log(msg){
+  const el = document.getElementById('log');
+  el.innerHTML = `<div>• ${new Date().toLocaleTimeString()} — ${escapeHtml(msg)}</div>` + el.innerHTML;
+}
+function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// -------------------- UI Refresh --------------------
+function refreshAll(){
+  document.getElementById('level').innerText = state.level;
+  document.getElementById('exp').innerText = `${state.exp} / ${state.expToNext}`;
+  document.getElementById('strength').innerText = state.strength;
+  document.getElementById('endurance').innerText = state.endurance;
+  document.getElementById('agility').innerText = state.agility;
+  document.getElementById('stamina-val').innerText = `${state.stamina} / ${state.maxStamina}`;
+  document.getElementById('bar-exp').style.width = Math.min(100, Math.floor((state.exp/state.expToNext)*100)) + '%';
+  document.getElementById('bar-stam').style.width = Math.min(100, Math.floor((state.stamina/state.maxStamina)*100)) + '%';
+  document.getElementById('avatar-figure').innerText = 'Lv' + state.level;
+  document.getElementById('avatar-desc').innerText = describe(state.level);
+  renderSkills(); renderAchievements(); saveState();
+}
+function describe(lv){
+  if(lv<3) return 'Weak but Determined';
+  if(lv<6) return 'Rising Fighter';
+  if(lv<10) return 'Dungeon Raider';
+  return 'Ascendant';
+}
+
+function renderSkills(){
+  const el = document.getElementById('skills'); el.innerHTML='';
+  if(state.skills.length===0) el.innerHTML='<li class="small">None</li>';
+  state.skills.forEach(s => { const li = document.createElement('li'); li.innerText = s; el.appendChild(li); });
+}
+function renderAchievements(){
+  const el = document.getElementById('achievements'); el.innerHTML = state.achievements.length ? state.achievements.join('<br>') : 'No achievements yet.';
+}
+
+// -------------------- Progression --------------------
+function grantExp(amount, reason){
+  state.exp += amount; log(`Gained ${amount} EXP${reason? ' ('+reason+')':''}`);
+  while(state.exp >= state.expToNext){
+    state.exp -= state.expToNext; levelUp();
+  }
+  refreshAll();
+}
+function levelUp(){
+  state.level += 1;
+  state.expToNext = Math.floor(state.expToNext * 1.25 + (state.level * 10));
+  // small stat increases on level
+  state.strength += 1; state.endurance += 1; state.agility += 1;
+  state.maxStamina = 10 + Math.floor(state.level/2);
+  state.stamina = Math.min(state.stamina, state.maxStamina);
+  log(`Leveled up! Now Lv ${state.level}`);
+  // unlocks
+  if(state.level===3) unlockSkill('Iron Core (Sit-up bonus)');
+  if(state.level===5) unlockSkill('Dungeon Access');
+  if(state.level===8) unlockSkill('Power Surge (10-rep multiplier)');
+}
+function unlockSkill(name){ if(!state.skills.includes(name)){ state.skills.push(name); log('Skill unlocked: ' + name); }}
+
+// -------------------- Exercises --------------------
+function doOne(type){
+  if(state.stamina < 1){ log('Not enough stamina. Rest to recover.'); return; }
+  state.stamina -= 1; state.totalReps[type] += 1;
+  let exp=0; let statGain = 0;
+  if(type==='push'){ exp = 8 + Math.floor(state.strength*0.5); state.strength += 0; statGain = 0 }
+  if(type==='sit'){ exp = 7 + Math.floor(state.endurance*0.4); }
+  if(type==='squat'){ exp = 6 + Math.floor(state.agility*0.4); }
+  // minor stat increases every X reps
+  if(state.totalReps[type] % 10 === 0){ if(type==='push') state.strength += 1; if(type==='sit') state.endurance +=1; if(type==='squat') state.agility +=1; log(`+1 ${type==='push'?'Strength':type==='sit'?'Endurance':'Agility'} from training milestone!`); }
+  grantExp(exp, `${capitalize(type)} x1`);
+  checkAchievements(); refreshAll();
+}
+function doTen(){
+  if(state.stamina < 10){ log('Not enough stamina for 10-rep burst.'); return; }
+  state.stamina -= 10;
+  // choose a default strong rep batch: 4 push,3 sit,3 squat
+  const batch = {push:4,sit:3,squat:3};
+  let bonus = 1;
+  if(state.skills.includes('Power Surge (10-rep multiplier)')) bonus = 1.4;
+  let totalExp = 0;
+  for(const [k,v] of Object.entries(batch)){
+    for(let i=0;i<v;i++){
+      let exp = (k==='push'?8: k==='sit'?7:6) + Math.floor((k==='push'?state.strength: k==='sit'?state.endurance:state.agility)*0.4);
+      totalExp += Math.floor(exp * bonus);
+      state.totalReps[k] += 1;
+    }
+  }
+  grantExp(totalExp, '10-rep burst');
+  checkAchievements(); refreshAll();
+}
+
+// -------------------- Stamina regen over time --------------------
+setInterval(()=>{
+  if(state.stamina < state.maxStamina){ state.stamina = Math.min(state.maxStamina, state.stamina + 1); refreshAll(); }
+}, 1000 * 8); // one stamina every 8 seconds
+
+// -------------------- Rest --------------------
+function rest(){ state.stamina = Math.min(state.maxStamina, state.stamina + 3); log('Rested and recovered stamina.'); refreshAll(); }
+
+// -------------------- Dungeon / Monster --------------------
+let currentMonster = null;
+function enterDungeon(){
+  if(state.level < 5){ log('Dungeon locked. Reach Lv 5 to enter.'); return; }
+  // spawn a monster scaled to level
+  const hp = 40 + state.level * 20;
+  const atk = 2 + Math.floor(state.level/2);
+  currentMonster = {name: `Gatekeeper Lv${state.level}`, hp, maxHp:hp, atk};
+  document.getElementById('monster-name').innerText = currentMonster.name;
+  document.getElementById('monster-hp').innerText = `HP: ${currentMonster.hp} / ${currentMonster.maxHp}`;
+  document.getElementById('monster-figure').innerText = '👾';
+  log('Entered dungeon: ' + currentMonster.name);
+}
+function fightAuto(){
+  if(!currentMonster){ log('No monster. Enter the dungeon first.'); return; }
+  // simple auto fight where player's damage = strength*2 + agility
+  const playerDmg = state.strength * 2 + state.agility;
+  const monsterDmg = currentMonster.atk + Math.max(0, 5 - state.endurance);
+  // loop until one dies, but cap iterations
+  let rounds=0; while(currentMonster.hp>0 && rounds<30){
+    currentMonster.hp -= playerDmg;
+    if(currentMonster.hp<=0) break;
+    // monster hits
+    // simulate player surviving based on endurance
+    if(Math.random() > (0.2 + state.endurance*0.02)){
+      // player takes damage: lose stamina
+      state.stamina = Math.max(0, state.stamina - 1);
+    }
+    rounds++;
+  }
+  if(currentMonster.hp <= 0){
+    const exp = Math.floor(currentMonster.maxHp * 1.2);
+    grantExp(exp, 'Defeated ' + currentMonster.name);
+    log('Victory! You cleared the dungeon.');
+    // possible achievement
+    if(!state.achievements.includes('First Clear')){ state.achievements.push('First Clear'); }
+    currentMonster = null; document.getElementById('monster-name').innerText = 'No Dungeon'; document.getElementById('monster-hp').innerText = '';
+  } else {
+    log('Fight ended inconclusively. Monster still stands.');
+  }
+  refreshAll();
+}
+
+// -------------------- Achievements --------------------
+function checkAchievements(){
+  if(!state.achievements.includes('100 Push-ups') && state.totalReps.push >= 100){ state.achievements.push('100 Push-ups'); log('Achievement: 100 Push-ups'); }
+  if(!state.achievements.includes('First Level 5') && state.level >=5){ state.achievements.push('Reached Lv 5'); log('Achievement: Reached Lv 5'); }
+}
+
+// -------------------- Helpers --------------------
+function capitalize(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+
+// -------------------- Persistence --------------------
+function loadState(){
+  try{ const raw = localStorage.getItem('sl_gym'); if(!raw) return null; const parsed = JSON.parse(raw); // migration guard
+    return Object.assign({}, DEFAULT, parsed);
+  }catch(e){ console.warn('Failed load',e); return null; }
+}
+
+// -------------------- Event wiring --------------------
+document.getElementById('btn-push').addEventListener('click', ()=>doOne('push'));
+document.getElementById('btn-sit').addEventListener('click', ()=>doOne('sit'));
+document.getElementById('btn-squat').addEventListener('click', ()=>doOne('squat'));
+document.getElementById('btn-do10').addEventListener('click', doTen);
+document.getElementById('btn-rest').addEventListener('click', rest);
+document.getElementById('btn-enter').addEventListener('click', enterDungeon);
+document.getElementById('btn-attack').addEventListener('click', fightAuto);
+document.getElementById('btn-reset').addEventListener('click', resetState);
+
+// -------------------- Auto-save --------------------
+if(!localStorage.getItem('sl_gym')){ log('Welcome — start training to level up!'); }
+refreshAll();
+setInterval(saveState, 10000);
+
+// -------------------- Motion (Accelerometer) Tracking --------------------
+let motionTracking = false;
+let motionCount = 0;
+let lastMotionTime = 0;
+let motionBuffer = [];
+const MOTION_MIN_INTERVAL = 700; // ms between counted reps to avoid double-counting
+
+async function requestMotionPermission(){
+  // iOS requires a user gesture to request DeviceMotionEvent permission
+  if(typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function'){
+    try{
+      const res = await DeviceMotionEvent.requestPermission();
+      return res === 'granted';
+    }catch(e){ return false; }
+  }
+  return true; // most other browsers don't require
+}
+
+function startMotion(){
+  requestMotionPermission().then(granted => {
+    if(!granted){ alert('Motion permission denied. Enable it in browser settings.'); return; }
+    if(motionTracking) return;
+    motionTracking = true; motionCount = 0; document.getElementById('motion-count').innerText = 0;
+    window.addEventListener('devicemotion', onMotion);
+    document.getElementById('start-motion').disabled = true; document.getElementById('stop-motion').disabled = false;
+    log('Motion tracking started.');
+  });
+}
+function stopMotion(){
+  if(!motionTracking) return;
+  motionTracking = false; window.removeEventListener('devicemotion', onMotion);
+  document.getElementById('start-motion').disabled = false; document.getElementById('stop-motion').disabled = true;
+  log('Motion tracking stopped. Counted ' + motionCount + ' reps.');
+}
+
+function onMotion(ev){
+  // we analyze acceleration including gravity for larger movement detection
+  const a = ev.accelerationIncludingGravity || ev.acceleration;
+  if(!a) return;
+  const z = a.z || 0; // vertical-ish axis depending on device orientation
+  const now = Date.now();
+  motionBuffer.push({t:now,z});
+  // keep short buffer
+  if(motionBuffer.length > 30) motionBuffer.shift();
+  // detect peaks (simple peak detection)
+  const recent = motionBuffer.slice(-6);
+  const zs = recent.map(x=>x.z);
+  const avg = zs.reduce((s,v)=>s+v,0)/zs.length;
+  const peak = Math.max(...zs);
+  // heuristic thresholds — tuned for typical phone-in-pocket/chest usage
+  if(peak - avg > 12){
+    if(now - lastMotionTime > MOTION_MIN_INTERVAL){
+      lastMotionTime = now; motionCount += 1; document.getElementById('motion-count').innerText = motionCount;
+      const ex = document.getElementById('exercise-select').value;
+      // call doOne for each detected rep
+      doOne(ex);
+    }
+    // clear buffer
+    motionBuffer = [];
+  }
+}
+
+// -------------------- Camera (PoseNet) Tracking --------------------
+let net = null; // posenet model
+let video = document.getElementById('video');
+let overlay = document.getElementById('overlay');
+let ctx = overlay.getContext('2d');
+let cameraTracking = false;
+let cameraCount = 0;
+let showOverlay = true;
+
+async function setupPoseNet(){
+  if(net) return net;
+  log('Loading pose model...');
+  net = await posenet.load({architecture: 'MobileNetV1', outputStride: 16, inputResolution: {width: 480, height: 360}, multiplier: 0.75});
+  log('Pose model loaded.');
+  return net;
+}
+
+async function startCamera(){
+  try{
+    await setupPoseNet();
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:480, height:360}, audio:false});
+    video.srcObject = stream; video.style.display = 'block'; overlay.style.display = showOverlay ? 'block' : 'none';
+    await video.play();
+    cameraTracking = true; cameraCount = 0; document.getElementById('camera-count').innerText = 0;
+    document.getElementById('start-camera').disabled = true; document.getElementById('stop-camera').disabled = false;
+    trackLoop();
+    log('Camera tracking started.');
+  }catch(e){ console.error(e); alert('Camera access failed: ' + e.message); }
+}
+
+function stopCamera(){
+  cameraTracking = false; document.getElementById('start-camera').disabled = false; document.getElementById('stop-camera').disabled = true;
+  // stop stream
+  if(video.srcObject){ video.srcObject.getTracks().forEach(t=>t.stop()); video.srcObject=null; }
+  video.style.display = 'none'; overlay.style.display = 'none';
+  log('Camera tracking stopped. Counted ' + cameraCount + ' reps.');
+}
+
+function toggleOverlay(){ showOverlay = !showOverlay; overlay.style.display = showOverlay ? 'block' : 'none'; }
+
+// Simple rep detection per exercise type using keypoint angles
+const repState = {push:{down:false}, sit:{down:false}, squat:{down:false}};
+
+function angleBetween(a,b,c){
+  // angle at b between ba and bc (degrees)
+  const ab = {x: a.x - b.x, y: a.y - b.y};
+  const cb = {x: c.x - b.x, y: c.y - b.y};
+  const dot = ab.x*cb.x + ab.y*cb.y;
+  const mag = Math.sqrt((ab.x*ab.x+ab.y*ab.y)*(cb.x*cb.x+cb.y*cb.y));
+  if(mag === 0) return 0;
+  const cos = Math.max(-1, Math.min(1, dot/mag));
+  return Math.acos(cos) * 180 / Math.PI;
+}
+
+async function trackLoop(){
+  if(!cameraTracking) return;
+  const pose = await net.estimateSinglePose(video, {flipHorizontal: true});
+  drawPose(pose);
+  detectRepsFromPose(pose);
+  requestAnimationFrame(trackLoop);
+}
+
+function drawPose(pose){
+  const scaleX = overlay.width / video.videoWidth; const scaleY = overlay.height / video.videoHeight;
+  ctx.clearRect(0,0,overlay.width, overlay.height);
+  if(!showOverlay) return;
+  // draw keypoints
+  pose.keypoints.forEach(k => {
+    if(k.score > 0.4){ ctx.beginPath(); ctx.arc(k.position.x*scaleX, k.position.y*scaleY, 4, 0, Math.PI*2); ctx.fillStyle = '#38bdf8'; ctx.fill(); }
+  });
+  // draw skeleton
+  const adjacent = posenet.getAdjacentKeyPoints(pose.keypoints, 0.4);
+  ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(124,58,237,0.9)';
+  adjacent.forEach(pair =>{
+    ctx.beginPath(); ctx.moveTo(pair[0].position.x*scaleX, pair[0].position.y*scaleY); ctx.lineTo(pair[1].position.x*scaleX, pair[1].position.y*scaleY); ctx.stroke();
+  });
+}
+
+function detectRepsFromPose(pose){
+  const ex = document.getElementById('exercise-select').value;
+  if(ex === 'push'){
+    // use elbow angle (shoulder-elbow-wrist)
+    const leftShoulder = getPoint(pose,'leftShoulder'), leftElbow = getPoint(pose,'leftElbow'), leftWrist = getPoint(pose,'leftWrist');
+    if(!leftShoulder || !leftElbow || !leftWrist) return;
+    const angle = angleBetween(leftShoulder, leftElbow, leftWrist);
+    // push-up: elbow angle falls (down) below 80, then extends above 150 -> count
+    if(angle < 80) repState.push.down = true;
+    if(repState.push.down && angle > 150){
+      repState.push.down = false; cameraCount += 1; document.getElementById('camera-count').innerText = cameraCount; doOne('push');
+    }
+  }
+  if(ex === 'sit'){
+    // use hip angle (shoulder-hip-knee)
+    const leftShoulder = getPoint(pose,'leftShoulder'), leftHip = getPoint(pose,'leftHip'), leftKnee = getPoint(pose,'leftKnee');
+    if(!leftShoulder || !leftHip || !leftKnee) return;
+    const angle = angleBetween(leftShoulder, leftHip, leftKnee);
+    // sit-up: hip angle decreases (curl) below 100 then extends above 140
+    if(angle < 100) repState.sit.down = true;
+    if(repState.sit.down && angle > 140){ repState.sit.down = false; cameraCount += 1; document.getElementById('camera-count').innerText = cameraCount; doOne('sit'); }
+  }
+  if(ex === 'squat'){
+    // use knee angle (hip-knee-ankle)
+    const leftHip = getPoint(pose,'leftHip'), leftKnee = getPoint(pose,'leftKnee'), leftAnkle = getPoint(pose,'leftAnkle');
+    if(!leftHip || !leftKnee || !leftAnkle) return;
+    const angle = angleBetween(leftHip, leftKnee, leftAnkle);
+    // squat: knee angle drops below 100 then rises above 160
+    if(angle < 100) repState.squat.down = true;
+    if(repState.squat.down && angle > 160){ repState.squat.down = false; cameraCount += 1; document.getElementById('camera-count').innerText = cameraCount; doOne('squat'); }
+  }
+}
+
+function getPoint(pose, name){
+  const kp = pose.keypoints.find(k=>k.part === name && k.score > 0.3);
+  return kp ? kp.position : null;
+}
+
+// -------------------- UI hooks for trackers --------------------
+document.getElementById('start-motion').addEventListener('click', startMotion);
+document.getElementById('stop-motion').addEventListener('click', stopMotion);
+document.getElementById('start-camera').addEventListener('click', startCamera);
+document.getElementById('stop-camera').addEventListener('click', stopCamera);
+document.getElementById('toggle-overlay').addEventListener('click', ()=>{ toggleOverlay(); });
+
+// Ensure overlay canvas matches video size when playing
+video.addEventListener('loadedmetadata', ()=>{
+  overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+});
+
+</script></body>
+</html>
